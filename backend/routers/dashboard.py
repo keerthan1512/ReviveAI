@@ -67,3 +67,16 @@ def approve_action(case_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(case)
     return {"status": "success", "case": {"id": case.id, "status": case.status}}
+
+import settings
+from fastapi import Body
+
+@router.get("/settings/autonomous")
+def get_autonomous():
+    return {"autonomous_mode": settings.AUTONOMOUS_MODE}
+
+@router.post("/settings/autonomous")
+def set_autonomous(mode: bool = Body(..., embed=True)):
+    settings.AUTONOMOUS_MODE = mode
+    return {"autonomous_mode": settings.AUTONOMOUS_MODE}
+

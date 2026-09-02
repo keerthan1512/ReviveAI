@@ -20,7 +20,7 @@ def analyze_recovery_case(db: Session, case_id: str, transaction_data: dict, cus
             parser = JsonOutputParser(pydantic_object=RecoveryActionOutput)
 
             prompt = ChatPromptTemplate.from_messages([
-                ("system", "You are ReviveAI, an intelligent payment recovery agent. Analyze the transaction and customer history to recommend the best recovery strategy. You MUST also generate the exact personalized email or SMS copy to send. Return ONLY valid JSON matching the format instructions."),
+                ("system", "You are ReviveAI, an intelligent payment recovery agent. Analyze the transaction and customer history to recommend the best recovery strategy. You MUST also generate the exact personalized email or SMS copy to send.\nCRITICAL STRATEGY: If the transaction amount is > 5000 and the failure reason implies insufficient funds or bank issues, you are authorized to generate a 10% discount code (e.g., 'SAVE10') in the message to prevent cart abandonment.\nReturn ONLY valid JSON matching the format instructions."),
                 ("user", "Transaction Details: {transaction}\nCustomer History: {history}\n\nProvide the recommendation and generated message.\n{format_instructions}")
             ])
 

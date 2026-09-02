@@ -84,10 +84,23 @@ async def razorpay_webhook(request: Request, db: Session = Depends(get_db)):
             "success_rate": f"{(success_count / total_count * 100):.1f}%" if total_count > 0 else "0%"
         }
 
-        analyze_recovery_case(db, rc.id, {
+        decision = analyze_recovery_case(db, rc.id, {
             "amount": transaction.amount,
             "method": transaction.payment_method,
             "reason": transaction.failure_reason
         }, customer_history)
+
+        # Autonomous Execution Check
+        import settings
+        from email_service import send_recovery_email
+        if settings.AUTONOMOUS_MODE and decision.confidence_score >= 0.90:
+            print(f"[AUTONOMOUS AGENT] High confidence ({decision.confidence_score}). Auto-executing strategy for {customer_email}")
+            send_recovery_email(
+                to_email=customer.email, 
+                subject="Action Required on your Recent Payment", 
+                message_body=decision.generated_message
+            )
+            rc.status = "actioned"
+            db.commit()
 
     return {"status": "ok"}

@@ -45,6 +45,21 @@ function App() {
   // Storefront State
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [checkoutStatus, setCheckoutStatus] = useState<'idle' | 'failed'>('idle');
+  const [promoCode, setPromoCode] = useState('');
+  const [discountApplied, setDiscountApplied] = useState(0);
+
+  const basePrice = 2500;
+  const finalPrice = basePrice - discountApplied;
+
+  const handleApplyPromo = () => {
+    if (promoCode.trim().toUpperCase() === 'SAVE10') {
+      setDiscountApplied(basePrice * 0.10);
+      toast.success("10% Discount Applied Successfully!");
+    } else {
+      toast.error("Invalid promo code");
+      setDiscountApplied(0);
+    }
+  };
 
   const addLog = (log: string) => {
     setAgentLogs(prev => [log, ...prev].slice(0, 5));
@@ -53,19 +68,23 @@ function App() {
   const fetchDashboardData = async () => {
     if (currentView !== 'dashboard') return;
     try {
-      const [metricsRes, casesRes, txRes] = await Promise.all([
+      const [metricsRes, casesRes, txRes, autoRes] = await Promise.all([
         fetch('/api/dashboard/metrics'),
         fetch('/api/dashboard/recovery-cases'),
-        fetch('/api/transactions')
+        fetch('/api/transactions'),
+        fetch('/api/dashboard/settings/autonomous')
       ]);
 
-      if (metricsRes.ok && casesRes.ok && txRes.ok) {
+      if (metricsRes.ok && casesRes.ok && txRes.ok && autoRes.ok) {
         const metricsData = await metricsRes.json();
         const casesData = await casesRes.json();
         const txData = await txRes.json();
+        const autoData = await autoRes.json();
+        
         setMetrics(metricsData);
         setCases(casesData.recovery_cases || []);
         setTransactions(txData.transactions || []);
+        setAutonomousMode(autoData.autonomous_mode);
       }
     } catch (error) {
       console.error("Failed to fetch dashboard data:", error);
@@ -117,8 +136,8 @@ function App() {
       setIsCheckingOut(false);
       setCheckoutStatus('failed');
       toast.error("Payment declined by bank.");
-      // Fire webhook in background
-      simulateWebhookEvent(250000, "sneaker_fan_99", "insufficient_funds");
+      // Fire webhook in background (scale amount based on discount)
+      simulateWebhookEvent(finalPrice * 100, "sneaker_fan_99", "insufficient_funds");
     }, 2500);
   };
 
@@ -137,21 +156,32 @@ function App() {
     }
   };
 
+  const toggleAutonomousMode = async () => {
+    const newValue = !autonomousMode;
+    setAutonomousMode(newValue);
+    addLog(`[System] Autonomous Mode toggled to: ${newValue ? 'ON' : 'OFF'}`);
+    
+    try {
+      await fetch('/api/dashboard/settings/autonomous', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: newValue })
+      });
+      if (newValue) {
+        toast.success("Agent is now running autonomously!");
+      } else {
+        toast("Autonomous mode disabled. Manual approval required.", { icon: '🛑' });
+      }
+    } catch (error) {
+      toast.error('Failed to update settings');
+    }
+  };
+
   useEffect(() => {
     fetchDashboardData();
     const interval = setInterval(fetchDashboardData, 5000);
     return () => clearInterval(interval);
   }, [currentView]);
-
-  const chartData = [
-    { name: 'Mon', recovered: 4000, lost: 2400 },
-    { name: 'Tue', recovered: 3000, lost: 1398 },
-    { name: 'Wed', recovered: 2000, lost: 9800 },
-    { name: 'Thu', recovered: 2780, lost: 3908 },
-    { name: 'Fri', recovered: 1890, lost: 4800 },
-    { name: 'Sat', recovered: 2390, lost: 3800 },
-    { name: 'Sun', recovered: 3490, lost: 4300 },
-  ];
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans text-gray-900">
@@ -187,7 +217,7 @@ function App() {
               <span className="text-xs font-bold text-gray-700">Autonomous Mode</span>
               <span className="text-[10px] text-gray-500">Auto-execute &gt;90% conf</span>
             </div>
-            <button onClick={() => setAutonomousMode(!autonomousMode)}>
+            <button onClick={toggleAutonomousMode}>
               {autonomousMode ?
                 <ToggleRight className="w-8 h-8 text-indigo-600" /> :
                 <ToggleLeft className="w-8 h-8 text-gray-400" />
@@ -419,9 +449,13 @@ function App() {
                 </div>
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">AirMax Premium Sneakers</h3>
                 <p className="text-gray-500 text-center mb-6">Limited edition urban footwear. Secure your pair before they sell out.</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-3xl font-bold text-gray-900">₹2,500</span>
-                  <span className="text-sm text-gray-400 line-through">₹3,999</span>
+                <div className="flex flex-col items-center gap-1">
+                  <span className="text-3xl font-bold text-gray-900">₹{finalPrice.toLocaleString()}</span>
+                  {discountApplied > 0 ? (
+                    <span className="text-sm text-green-500 font-bold">10% Discount Applied!</span>
+                  ) : (
+                    <span className="text-sm text-gray-400 line-through">₹3,999</span>
+                  )}
                 </div>
               </div>
 
@@ -441,7 +475,7 @@ function App() {
                   </div>
                 )}
 
-                <div className="space-y-4 mb-8">
+                <div className="space-y-4 mb-6">
                   <div>
                     <label className="block text-xs font-bold text-gray-700 uppercase mb-2">Email Address</label>
                     <input type="email" value="sneaker_fan_99@example.com" readOnly className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-600 focus:outline-none" />
@@ -458,6 +492,26 @@ function App() {
                       </div>
                     </div>
                   </div>
+                  
+                  {/* Promo Code Section */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-2">Promo Code</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="Enter code (e.g. SAVE10)" 
+                        value={promoCode}
+                        onChange={(e) => setPromoCode(e.target.value)}
+                        className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-indigo-500 uppercase" 
+                      />
+                      <button 
+                        onClick={handleApplyPromo}
+                        className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-800 transition-colors"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <button
@@ -471,7 +525,7 @@ function App() {
                       Processing Payment...
                     </>
                   ) : (
-                    <>Pay ₹2,500 Securely</>
+                    <>Pay ₹{finalPrice.toLocaleString()} Securely</>
                   )}
                 </button>
                 <p className="text-center text-xs text-gray-400 mt-4 flex items-center justify-center gap-1">
